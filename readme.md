@@ -9,10 +9,10 @@ Another advantage for small devices like the Raspberry Pi is that this project d
 - [Setup](#setup)
 - [Required Python packages](#required-python-packages)
 - [Settings](#settings)
-	- [UDP & TCP](#udp-&-tcp-vpn-servers)
-	- [Regional VPN's](#regional-vpn-servers)
-	- [Connect & Rotate VPN's](#connect-&-rotate-vpn-servers)
+	- [Connect & Rotate VPN's](#connect-and-rotate-vpn-servers)
 	- [Close VPN connection](#close-vpn-connection)
+	- [UDP & TCP](#udp-and-tcp-vpn-servers)
+	- [Regional VPN's](#regional-vpn-servers)
 	- [Log Files](#log-files)
 	- [Verbose output](#verbose-output)
 	- [Get public IP](#get-your-public-ip)
@@ -81,12 +81,13 @@ Go to [Setup](#setup) Step 4. and 5. to install dependencies
 ## Settings
 Some additional features make this project more universal and easier to use in your Python projects.
 
-### Connect & Rotate VPN Servers
+### Connect and Rotate VPN Servers
 To connect to a VPN server, use the *rotate_vpn()* method.
 It will automatically try to reconnect unless you have set the parameter *retry=False*.
 You can also set the maximum number of attempts with the parameter *max_trials=10*. 
 The *rotate_vpn()* method returns *True* if a connection was successful.
 ```python
+from VPN import *           # import VPN class
 v = VPN()
 v.rotate_vpn()              # selects a random VPN from all VPN's
 v.rotate_vpn(retry=False)   # will only try to connect once and returns True or False
@@ -105,10 +106,9 @@ v.rotate_vpn()  # connect to a VPN server
 v.close_vpn()   # close all OpenVPN connections
 ```
 
-### UDP & TCP VPN Servers
+### UDP and TCP VPN Servers
 Use the method *setVPNType()* to use TCP or UDP servers.
 ```python
-from VPN import *       # import VPN class
 v = VPN()               # use UDP servers by default
 v.setVPNType("tcp")     # use TCP servers
 v.setVPNType("udp")     # use UDP servers
