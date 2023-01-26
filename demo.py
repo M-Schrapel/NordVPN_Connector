@@ -17,7 +17,6 @@ from VPN import *
 ## set credentials in the vpn_acc.txt from subfolder VPNdata once
 user="<your_email>"
 password="<your_password>"
-
 ## create vpn
 v = VPN()
 print("Your IP is: "+v.getIP())
