@@ -4,7 +4,7 @@ It contains your NordVPN account information in  *vpn_acc.txt* and the .csv log 
 
 ## Account information
 The file *vpn_acc.txt* contains your NordVPN account data.
-**Don't share this file! **
+**Don't share this file!**
 
 ```
 <First Line is your account mail>
