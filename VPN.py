@@ -214,9 +214,6 @@ class VPN:
         userfolder=os.path.join(self.vpn_csvfolder,self.__vpn_file)
         if not os.path.exists(userfolder):
             warn("You have to add your credentials to: "+userfolder+"\nAlternatively use setCredentials(<user>,<pass>)")
-        ########################################################
-        userfolder = '../../tools/nordvpn_python/' + userfolder
-        ###############################################################
         vpn_csvfolder=self.vpn_csvfolder
         # .csv log file
         vpn_list=os.path.join(vpn_csvfolder, self.vpn_csv)
