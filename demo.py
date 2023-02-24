@@ -19,23 +19,16 @@ user="<your_email>"
 password="<your_password>"
 ## create vpn
 v = VPN()
-v.verbose=False
 print("Your IP is: "+v.getIP())
 ## you only have to set credentials once!
 ## credentials are stored as files
-#v.setCredentials(user,password)
+v.setCredentials(user,password)
 ## connect to vpn server
 v.rotate_vpn()
-print("Your IP is: "+v.getIP())
-
 ## connect VPN without retry in case of server connection errors
 v.rotate_vpn(retry=False)
-print("Your IP is: "+v.getIP())
-
 v.setVPNType("tcp")
 v.rotate_vpn(retry=False)
-print("Your IP is: "+v.getIP())
-
 v.setVPNType("udp")
 ## get stored regions
 regions=v.getAllRegions()
@@ -43,14 +36,10 @@ regions=v.getAllRegions()
 v.setRegions(regions[0:2])
 ## connect again 
 v.rotate_vpn()
-print("Your IP is: "+v.getIP())
-
 ## close vpn
 v.close_vpn()
 ## alternative
 v = VPN(regions=["us","fr","jp","de"])
 v.rotate_vpn()
-print("Your IP is: "+v.getIP())
-
 v.close_vpn()
 print("\nYour IP is: "+v.getIP())
