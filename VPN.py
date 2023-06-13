@@ -7,14 +7,16 @@
 
 @license: MIT
 """
-
+import signal                    #process signals
 import os                        # paths and files
 import subprocess                # terminal
-import time                      # timestamps
-import random                    # random file selection
-import warnings                  # warning messages
+from time import sleep           # timestamps
+from random import randrange     # random file selection
+from warnings import warn        # warning messages
 import pandas as pd              # handling .csv log files
 from datetime import datetime    # timestamps
+from shutil import which         #find paths
+import urllib.request            #getIP
 
 """A VPN handler for NordVPN using OpenVPN on Debian
 
@@ -51,7 +53,10 @@ class VPN:
                  vpn_file="vpn_acc.txt",
                  vpn_csv="vpn_states.csv",
                  make_vpnlist=True,
-                 verbose = True
+                 verbose=True,
+                 sleep_time=2,
+                 connect_retry_max=1, 
+                 server_poll_timeout=3
                  ):
         self.__regions=regions
         self.vpn_folder=vpn_folder
@@ -65,6 +70,12 @@ class VPN:
         self.servers=[]
         self.init_vpn()
         self.last_vpn=[]
+        self.connected=False
+        self.sleep_time=sleep_time
+        self.connect_retry_max=connect_retry_max, 
+        self.server_poll_timeout=server_poll_timeout
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)  
+        signal.signal(signal.SIGCONT, signal.SIG_IGN) 
         
     # Set regions with list of strings e.g. ['us','fr','de']
     def setRegions(self,regions):
@@ -138,7 +149,7 @@ class VPN:
         self.servers = self.getVPNs(regions=regions)
         userfolder=os.path.join(self.vpn_csvfolder,self.__vpn_file)
         if not os.path.exists(userfolder):
-            warnings.warn("You have to add your credentials to: "+userfolder+"\nAlternatively use setCredentials(<user>,<pass>)")
+            warn("You have to add your credentials to: "+userfolder+"\nAlternatively use setCredentials(<user>,<pass>)")
 
             
     # get vpn servers within desired regions
@@ -171,67 +182,91 @@ class VPN:
     
     # close vpn connection
     def close_vpn(self):
-        # stop VPN
-        cmd_stop= "sudo "+self.ovpn_folder+" stop"
-        vpn_stp = subprocess.Popen(cmd_stop, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
-        vpn_stp.terminate()
-        # kill VPN process
-        cmd_stop= "sudo killall openvpn"
-        vpn_stp = subprocess.Popen(cmd_stop, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
-        vpn_stp.terminate()
-        time.sleep(1)
+        if self.verbose:
+            print("CLosing VPN ... \n")
+        subprocess.run(["sudo", "/usr/bin/killall" ,"openvpn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #Wait for OS network config to be restored
+        sleep(self.sleep_time)
         
     # get current public IP
     def getIP(self):
-        time.sleep(1)
-        cmd = "dig +short myip.opendns.com @resolver1.opendns.com" # required: sudo apt-get install dnsutils
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
-        return result.stdout
-        
+        return  urllib.request.urlopen("https://ident.me").read().decode("utf8")
+
+    #Handler for receive SIGCHILD signal from openvpn process 
+    def SIGCHILD_handler(self, _, __):
+        if self.verbose:
+            print('SIGCHILD received --> Connection failed')
+        self.connected = False
+
+    #Handler for receive SIGCONT signal, triggered by openvpn when a successfull TUN/TAP interface has been made. Specified by '--up' option.
+    def SIGCONT_handler(self, _, __):
+        if self.verbose:
+            print('SIGCONT received --> Connection successfull')
+        self.connected = True
+
     # Use another randomly selected VPN
-    def rotate_vpn(self,delay_connect = 0,retry=True,max_trials=25):
-        # find all vpns in filesystem
-        prev_ip = self.getIP()
+    def rotate_vpn(self,trials=0, retry=True,max_trials=10):
+        res=False
         self.close_vpn()
-        # get default IP
-        default_ip = self.getIP()
         # select random VPN
-        file_vpn = self.servers[random.randrange(0,len(self.servers)-1)]
+        file_vpn = self.servers[randrange(0,len(self.servers)-1)]
         # credentials
         userfolder=os.path.join(self.vpn_csvfolder,self.__vpn_file)
         if not os.path.exists(userfolder):
-            warnings.warn("You have to add your credentials to: "+userfolder+"\nAlternatively use setCredentials(<user>,<pass>)")
+            warn("You have to add your credentials to: "+userfolder+"\nAlternatively use setCredentials(<user>,<pass>)")
         vpn_csvfolder=self.vpn_csvfolder
         # .csv log file
         vpn_list=os.path.join(vpn_csvfolder, self.vpn_csv)
-        # initiate a VPN connection
-        cmd_start = 'sudo openvpn --auth-nocache --config "'+os.path.join(self.vpn_folder+self.vpn_type,file_vpn)+'" --auth-user-pass '+userfolder
-        subprocess.Popen(cmd_start, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
-        time.sleep(delay_connect+1)
-        next_ip = self.getIP() 
-        # check connection
-        if prev_ip == next_ip or next_ip == default_ip or "connection timed out" in next_ip:
-            # connection was not successful
+
+        """ Initiate VPN connection"""
+        #Get PID which receive the SIGCONT signal
+        ppid = os.getpid()
+        #Build the openvpn command line 
+        python_path = which("python3")
+        openvpn_path = which("openvpn")
+        
+        up_cmd = python_path + " -c \'from os import kill; kill("+str(ppid)+","+str(int(signal.SIGCONT)) +")\'"
+        cmd_start = ['sudo', openvpn_path, '--connect-retry-max', str(self.connect_retry_max), '--tls-exit', '--server-poll-timeout', str(self.server_poll_timeout), '--script-security', '2', '--up', up_cmd, '--auth-nocache', '--config', os.path.join(self.vpn_folder+self.vpn_type,file_vpn), '--auth-user-pass', userfolder]
+        if self.verbose:
+            print("Connecting ...")    
+        #Update handlers for SIGCHLD and SIGONT signals : 
+        signal.signal(signal.SIGCHLD, self.SIGCHILD_handler)  
+        signal.signal(signal.SIGCONT, self.SIGCONT_handler) 
+        #Redirect stdout to a file for debugging
+        stdout = open('stdout.txt', 'w')
+        subprocess.Popen(cmd_start, stdout=stdout, stderr=subprocess.PIPE)
+        #Waiting for signal SIGCONT if success or SICHILD if fail
+        signal.pause()
+        #Ignore signals until next connection
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)  
+        signal.signal(signal.SIGCONT, signal.SIG_IGN) 
+
+        """Post VPN connection process"""
+        #Wait for OS network config finished and update the IP
+        sleep(self.sleep_time)
+        ip = self.getIP()
+        # connection was not successful
+        if self.connected == False:
             if self.verbose:
-                print(file_vpn.replace('.nordvpn.com.'+self.vpn_type+'.ovpn','')+" VPN error - IP: "+prev_ip.replace("\n",""))
+                print(file_vpn.replace('.nordvpn.com.'+self.vpn_type+'.ovpn','')+" VPN error - IP: "+ip.replace("\n",""))
             if self.make_vpnlist:
                 self.vpnlist(file_vpn,False,vpn_list)
-
-            if retry: # retry connection
-                if delay_connect==max_trials: # no connection?
+            if retry:
+                trials+=1
+                if trials==max_trials: # no connection?
                     if self.verbose:
-                        print("will try default connection....")
-                time.sleep(delay_connect)
-                self.rotate_vpn(delay_connect=delay_connect+1*0.5,max_trials=max_trials)
-            return False
-            
-        else: # connection established
+                        print("Connections not succeded, max_trials reached")
+                else:
+                    self.rotate_vpn(trials=trials, max_trials=max_trials)
+        else: 
             self.last_vpn=file_vpn
             if self.verbose:
-                print(file_vpn.replace('.nordvpn.com.'+self.vpn_type+'.ovpn','')+" VPN IP: "+next_ip.replace("\n",""))
+                print(file_vpn.replace('.nordvpn.com.'+self.vpn_type+'.ovpn','')+" VPN IP: "+ip.replace("\n",""))
             if self.make_vpnlist:
                 self.vpnlist(file_vpn,True,vpn_list)
-            return True
+            res=True
+        return res
+
         
     # Add VPN connection to overview in .csv log file
     def vpnlist(self, file_vpn, good_vpn = True,vpn_list=[]):
